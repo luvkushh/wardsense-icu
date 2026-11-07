@@ -21,5 +21,6 @@ DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "llama-3.3-70b-versatile").strip()
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 
-# Check whether live Hindsight credentials are provided
+# Check whether live credentials are provided
 USE_LIVE_HINDSIGHT = bool(HINDSIGHT_API_KEY and HINDSIGHT_API_KEY != "your-api-key")
+USE_LIVE_GROQ = bool(GROQ_API_KEY and GROQ_API_KEY != "your-groq-key")

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://band.ai/schemas/agent-v1.json",
+  "name": "sitesense-rfi",
+  "displayName": "SiteSense RFI • Zero-Rework Construction Agent",
+  "version": "1.0.0",
+  "description": "Autonomous Construction Safety Agent powered by Vectorize Hindsight persistent memory and Groq LLM reasoning to prevent catastrophic rework.",
+  "category": "Engineering & Construction",
+  "runtime": {
+    "type": "python",
+    "version": ">=3.10",
+    "entrypoint": "run.py"
+  },
+  "scripts": {
+    "start": "python3 run.py web",
+    "demo": "python3 run.py demo",
+    "compare": "python3 run.py compare",
+    "test": "python3 run.py test"
+  },
+  "endpoints": {
+    "server": "http://localhost:8000",
+    "health": "http://localhost:8000/api/health",
+    "query": "http://localhost:8000/api/query",
+    "rfis": "http://localhost:8000/api/rfis",
+    "benchmarks": "http://localhost:8000/api/benchmarks"
+  },
+  "integrations": {
+    "memory": {
+      "provider": "vectorize-hindsight",
+      "bank_id": "omega_tower_construction_rfis",
+      "documentation": "https://hindsight.vectorize.io"
+    },
+    "llm": {
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "alternative_models": ["openai/gpt-oss-120b", "qwen/qwen3-32b"]
+    }
+  },
+  "environment": {
+    "HINDSIGHT_API_KEY": {
+      "description": "Vectorize Hindsight Cloud API Key (Promo code: MEMHACK99 for $50 free credits)",
+      "required": false
+    },
+    "GROQ_API_KEY": {
+      "description": "Groq Cloud API Key for ultra-fast reasoning inference",
+      "required": false
+    }
+  }
+}

@@ -1,7 +1,8 @@
 """Zero-Rework RFI Intelligence Agent.
-Combines Hindsight Agent Memory with construction domain logic to protect job sites
-from catastrophic errors, severed tendons, arc flashes, and inspection failures.
+Combines Vectorize Hindsight Agent Memory with Groq LLM reasoning and
+construction engineering domain logic to prevent catastrophic job-site errors.
 """
+import json
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -14,12 +15,13 @@ from src.models import (
 )
 from src.memory import HindsightMemoryManager
 from src.dataset import INITIAL_RFIS, BENCHMARK_SCENARIOS
+from src.config import GROQ_API_KEY, DEFAULT_MODEL, USE_LIVE_GROQ
 
 logger = logging.getLogger("sitesense.agent")
 
 
 class SiteSenseRFIAgent:
-    """Intelligent Construction Site Safety & RFI Agent powered by Hindsight Memory."""
+    """Intelligent Construction Site Safety & RFI Agent powered by Hindsight Memory and Groq."""
 
     def __init__(self, memory_manager: Optional[HindsightMemoryManager] = None):
         self.memory = memory_manager or HindsightMemoryManager()
@@ -45,6 +47,73 @@ class SiteSenseRFIAgent:
 
     def _normalize(self, text: str) -> str:
         return text.lower().replace("-", "").replace(" ", "").replace("_", "")
+
+    def _synthesize_with_groq(
+        self,
+        query: WorkerQueryRequest,
+        matched_rfis: List[RFIDocument],
+        base_resp: WorkerQueryResponse
+    ) -> WorkerQueryResponse:
+        """Use Groq LLM (llama-3.3-70b-versatile / qwen3-32b / gpt-oss-120b) to synthesize
+
+        rigorous engineering advice based on memories recalled from Hindsight.
+        """
+        if not USE_LIVE_GROQ or not matched_rfis:
+            return base_resp
+
+        try:
+            from groq import Groq
+            client = Groq(api_key=GROQ_API_KEY)
+
+            system_prompt = (
+                "You are the Senior Safety & Structural Engineer on Omega Tower. "
+                "Evaluate the field worker query against historical RFIs recalled from Hindsight agent memory. "
+                "Respond in valid JSON format with keys: "
+                "'verdict' (short authoritative uppercase verdict with emoji), "
+                "'hazard_details' (clear engineering explanation of the clash, tendon or busway depth, and risks), "
+                "'recommended_alternative' (exact pre-approved safe sleeve or modified procedure), "
+                "'rework_cost_prevented' (number)."
+            )
+
+            rfi_context = "\n\n".join([
+                f"[{r.id}] {r.title} (Approved: {r.date_issued})\n"
+                f"Discipline: {r.discipline.value} | Location: {r.level}, {r.grid_location}\n"
+                f"Approved Resolution: {r.approved_resolution}\n"
+                f"Hazard Rating: {r.hazard_level.value}\n"
+                f"Directives: {'; '.join(r.critical_directives)}\n"
+                f"Rework Risk: ${r.rework_cost_risk}"
+                for r in matched_rfis
+            ])
+
+            user_msg = (
+                f"FIELD WORKER QUESTION: \"{query.question}\"\n"
+                f"LOCATION: {query.level or 'Not specified'}, {query.grid_location or 'Not specified'}\n\n"
+                f"RECALLED HINDSIGHT MEMORIES:\n{rfi_context}"
+            )
+
+            completion = client.chat.completions.create(
+                model=DEFAULT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+
+            res_json = json.loads(completion.choices[0].message.content)
+            base_resp.verdict = res_json.get("verdict", base_resp.verdict)
+            base_resp.hazard_details = res_json.get("hazard_details", base_resp.hazard_details)
+            base_resp.recommended_alternative = res_json.get("recommended_alternative", base_resp.recommended_alternative)
+            if "rework_cost_prevented" in res_json:
+                base_resp.rework_cost_prevented = float(res_json["rework_cost_prevented"])
+
+            logger.info("Successfully synthesized safety verdict using Groq LLM.")
+            return base_resp
+
+        except Exception as e:
+            logger.warning(f"Groq LLM reasoning bypassed (using deterministic engine): {e}")
+            return base_resp
 
     def evaluate_worker_query(self, query: WorkerQueryRequest) -> WorkerQueryResponse:
         """Process field worker question, query Hindsight, and evaluate hazard risk."""
@@ -176,7 +245,7 @@ class SiteSenseRFIAgent:
             f"an estimated ${total_risk_prevented:,.2f} rework catastrophe."
         )
 
-        return WorkerQueryResponse(
+        base_resp = WorkerQueryResponse(
             status=status,
             verdict=verdict,
             summary_message=(
@@ -191,6 +260,9 @@ class SiteSenseRFIAgent:
             hindsight_memory_hits=len(memories),
             stateless_contrast=stateless_contrast
         )
+
+        # Synthesize with Groq LLM if configured
+        return self._synthesize_with_groq(query, matched_rfis, base_resp)
 
     def get_benchmarks(self) -> List[ComparisonItem]:
         return BENCHMARK_SCENARIOS
