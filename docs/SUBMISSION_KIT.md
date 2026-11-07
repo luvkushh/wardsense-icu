@@ -48,7 +48,7 @@ We built WardSense ICU using Hindsight agent memory + Groq LPU to fix cross-shif
 2. Shift 1 -> Shift 5 -> Shift 20 memory precision scales from 38% to 98%
 3. Morning MD orders run client.recall() to block lethal contraindications in <50ms
 
-Repo: <YOUR_GITHUB_REPO_URL>
+Repo: https://github.com/luvkushh/wardsense-icu
 Built with @Code.in
 
 #AIAgents #AI #Hindsight #AgentMemory #LLM
