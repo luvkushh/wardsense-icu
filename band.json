@@ -1,10 +1,10 @@
 {
   "$schema": "https://band.ai/schemas/agent-v1.json",
-  "name": "sitesense-rfi",
-  "displayName": "SiteSense RFI • Zero-Rework Construction Agent",
+  "name": "wardsense-icu",
+  "displayName": "WardSense ICU • Clinical Shift-Handoff & Continuity Agent",
   "version": "1.0.0",
-  "description": "Autonomous Construction Safety Agent powered by Vectorize Hindsight persistent memory and Groq LLM reasoning to prevent catastrophic rework.",
-  "category": "Engineering & Construction",
+  "description": "Autonomous ICU Shift-Handoff & Clinical Continuity Agent powered by Vectorize Hindsight Cloud memory and Groq LPU reasoning to prevent life-threatening cross-shift medical errors.",
+  "category": "Healthcare Operations & Clinical Compliance",
   "runtime": {
     "type": "python",
     "version": ">=3.10",
@@ -13,35 +13,38 @@
   "scripts": {
     "start": "python3 run.py web",
     "demo": "python3 run.py demo",
-    "compare": "python3 run.py compare",
     "test": "python3 run.py test"
   },
   "endpoints": {
     "server": "http://localhost:8000",
-    "health": "http://localhost:8000/api/health",
-    "query": "http://localhost:8000/api/query",
-    "rfis": "http://localhost:8000/api/rfis",
-    "benchmarks": "http://localhost:8000/api/benchmarks"
+    "login": "http://localhost:8000/login",
+    "hospital_portal": "http://localhost:8000/hospital",
+    "doctor_portal": "http://localhost:8000/doctor",
+    "nurse_portal": "http://localhost:8000/nurse",
+    "health": "http://localhost:8000/api/health"
   },
   "integrations": {
     "memory": {
-      "provider": "vectorize-hindsight",
-      "bank_id": "omega_tower_construction_rfis",
-      "documentation": "https://hindsight.vectorize.io"
+      "provider": "vectorize-hindsight-cloud",
+      "cloud_url": "https://ui.hindsight.vectorize.io",
+      "api_url": "https://api.hindsight.vectorize.io",
+      "bank_id": "wardsense_icu_clinical_bank",
+      "promo_code": "MEMHACK99",
+      "documentation": "https://hindsight.vectorize.io/"
     },
     "llm": {
       "provider": "groq",
-      "model": "llama-3.3-70b-versatile",
-      "alternative_models": ["openai/gpt-oss-120b", "qwen/qwen3-32b"]
+      "model": "openai/gpt-oss-120b",
+      "alternative_models": ["qwen/qwen3-32b", "llama-3.3-70b-versatile"]
     }
   },
   "environment": {
     "HINDSIGHT_API_KEY": {
-      "description": "Vectorize Hindsight Cloud API Key (Promo code: MEMHACK99 for $50 free credits)",
+      "description": "Vectorize Hindsight Cloud API Key (Use promo code MEMHACK99 for $50 free credits at https://ui.hindsight.vectorize.io)",
       "required": false
     },
     "GROQ_API_KEY": {
-      "description": "Groq Cloud API Key for ultra-fast reasoning inference",
+      "description": "Groq Cloud API Key for ultra-fast inference with openai/gpt-oss-120b and qwen/qwen3-32b",
       "required": false
     }
   }

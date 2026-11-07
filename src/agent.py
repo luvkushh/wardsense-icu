@@ -1,268 +1,220 @@
-"""Zero-Rework RFI Intelligence Agent.
-Combines Vectorize Hindsight Agent Memory with Groq LLM reasoning and
-construction engineering domain logic to prevent catastrophic job-site errors.
-"""
-import json
-import logging
-from typing import List, Dict, Any, Optional
-
-from src.models import (
-    RFIDocument,
-    WorkerQueryRequest,
-    WorkerQueryResponse,
-    HazardLevel,
-    ComparisonItem
-)
-from src.memory import HindsightMemoryManager
-from src.dataset import INITIAL_RFIS, BENCHMARK_SCENARIOS
-from src.config import GROQ_API_KEY, DEFAULT_MODEL, USE_LIVE_GROQ
-
-logger = logging.getLogger("sitesense.agent")
+"""WardSense ICU Clinical Continuity, Order Verification & I-PASS Handoff Engine."""
+from typing import Any
+from src.database import get_patient_by_id, get_shift_tasks
+from src.hindsight_memory import memory_engine
+from src.llm_engine import llm_engine
 
 
-class SiteSenseRFIAgent:
-    """Intelligent Construction Site Safety & RFI Agent powered by Hindsight Memory and Groq."""
+class WardSenseAgent:
+    """
+    Core clinical agent combining Vectorize Hindsight temporal memory (`retain`/`recall`)
+    with Groq clinical reasoning (`openai/gpt-oss-120b` / `qwen/qwen3-32b`).
+    """
 
-    def __init__(self, memory_manager: Optional[HindsightMemoryManager] = None):
-        self.memory = memory_manager or HindsightMemoryManager()
-        self.rfis: Dict[str, RFIDocument] = {}
-        self.initialize_knowledge_base()
-
-    def initialize_knowledge_base(self):
-        """Pre-populate the Hindsight memory bank with project RFIs."""
-        logger.info(f"Retaining {len(INITIAL_RFIS)} initial RFIs into Hindsight Memory...")
-        for rfi in INITIAL_RFIS:
-            self.rfis[rfi.id] = rfi
-            self.memory.retain_rfi(rfi)
-
-    def add_rfi(self, rfi: RFIDocument) -> Dict[str, Any]:
-        """Dynamically ingest a new field RFI and retain in Hindsight."""
-        self.rfis[rfi.id] = rfi
-        resp = self.memory.retain_rfi(rfi)
-        logger.info(f"New RFI [{rfi.id}] retained in memory: {rfi.title}")
-        return resp
-
-    def get_all_rfis(self) -> List[RFIDocument]:
-        return list(self.rfis.values())
-
-    def _normalize(self, text: str) -> str:
-        return text.lower().replace("-", "").replace(" ", "").replace("_", "")
-
-    def _synthesize_with_groq(
+    def verify_clinical_order(
         self,
-        query: WorkerQueryRequest,
-        matched_rfis: List[RFIDocument],
-        base_resp: WorkerQueryResponse
-    ) -> WorkerQueryResponse:
-        """Use Groq LLM (llama-3.3-70b-versatile / qwen3-32b / gpt-oss-120b) to synthesize
-
-        rigorous engineering advice based on memories recalled from Hindsight.
+        patient_id: str,
+        proposed_order: str,
+        simulated_shift_limit: int | None = None,
+    ) -> dict[str, Any]:
         """
-        if not USE_LIVE_GROQ or not matched_rfis:
-            return base_resp
+        Compare Stateless AI vs. Hindsight-Augmented Agent for a proposed physician order.
+        Demonstrates the exact Before/After contrast and Shift 1 -> 5 -> 20 learning curve.
+        """
+        patient = get_patient_by_id(patient_id)
+        if not patient:
+            raise ValueError(f"Unknown patient_id: {patient_id}")
 
-        try:
-            from groq import Groq
-            client = Groq(api_key=GROQ_API_KEY)
+        recall_data = memory_engine.recall_patient_context(
+            patient_id=patient_id,
+            query=proposed_order,
+            max_shift=simulated_shift_limit,
+        )
+        memories = recall_data["memories"]
+        critical_memories = [
+            m for m in memories if m["severity"] in ("CRITICAL", "WARNING")
+        ]
 
-            system_prompt = (
-                "You are the Senior Safety & Structural Engineer on Omega Tower. "
-                "Evaluate the field worker query against historical RFIs recalled from Hindsight agent memory. "
-                "Respond in valid JSON format with keys: "
-                "'verdict' (short authoritative uppercase verdict with emoji), "
-                "'hazard_details' (clear engineering explanation of the clash, tendon or busway depth, and risks), "
-                "'recommended_alternative' (exact pre-approved safe sleeve or modified procedure), "
-                "'rework_cost_prevented' (number)."
+        # Check if custom newly retained nursing notes match keywords in the order
+        order_lower = proposed_order.lower()
+        order_words = [w.strip("(),.-") for w in order_lower.split() if len(w.strip("(),.-")) >= 5]
+        custom_triggered = None
+        for m in memories:
+            if m["memory_id"] not in ("MEM-B04-S01", "MEM-B04-S05", "MEM-B04-S12", "MEM-B04-S20", "MEM-B07-S01", "MEM-B07-S04", "MEM-B11-S06", "MEM-B15-S07"):
+                content_lower = m["content"].lower()
+                if m["severity"] in ("CRITICAL", "WARNING") and any(
+                    w in content_lower for w in order_words if w not in ("administer", "bolus", "infusion", "acute", "patient", "shift")
+                ):
+                    custom_triggered = m
+                    break
+
+        # Check if the Doctor selected the safe recommended medicine protocol
+        safe_alt_text = patient["hindsight_safe_protocol"]["safe_alternative"].lower()
+        is_safe_protocol_selected = (
+            proposed_order.strip().lower() == safe_alt_text
+            or (
+                any(
+                    kw in order_lower
+                    for kw in ("bumetanide", "aztreonam", "permissive hypertension", "16:00 ist", "kcl")
+                )
+                and not any(
+                    bad in order_lower
+                    for bad in ("furosemide", "lasix", "zosyn", "piperacillin", "labetalol", "08:00")
+                )
             )
-
-            rfi_context = "\n\n".join([
-                f"[{r.id}] {r.title} (Approved: {r.date_issued})\n"
-                f"Discipline: {r.discipline.value} | Location: {r.level}, {r.grid_location}\n"
-                f"Approved Resolution: {r.approved_resolution}\n"
-                f"Hazard Rating: {r.hazard_level.value}\n"
-                f"Directives: {'; '.join(r.critical_directives)}\n"
-                f"Rework Risk: ${r.rework_cost_risk}"
-                for r in matched_rfis
-            ])
-
-            user_msg = (
-                f"FIELD WORKER QUESTION: \"{query.question}\"\n"
-                f"LOCATION: {query.level or 'Not specified'}, {query.grid_location or 'Not specified'}\n\n"
-                f"RECALLED HINDSIGHT MEMORIES:\n{rfi_context}"
-            )
-
-            completion = client.chat.completions.create(
-                model=DEFAULT_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-
-            res_json = json.loads(completion.choices[0].message.content)
-            base_resp.verdict = res_json.get("verdict", base_resp.verdict)
-            base_resp.hazard_details = res_json.get("hazard_details", base_resp.hazard_details)
-            base_resp.recommended_alternative = res_json.get("recommended_alternative", base_resp.recommended_alternative)
-            if "rework_cost_prevented" in res_json:
-                base_resp.rework_cost_prevented = float(res_json["rework_cost_prevented"])
-
-            logger.info("Successfully synthesized safety verdict using Groq LLM.")
-            return base_resp
-
-        except Exception as e:
-            logger.warning(f"Groq LLM reasoning bypassed (using deterministic engine): {e}")
-            return base_resp
-
-    def evaluate_worker_query(self, query: WorkerQueryRequest) -> WorkerQueryResponse:
-        """Process field worker question, query Hindsight, and evaluate hazard risk."""
-        full_query_text = f"{query.question} {query.level or ''} {query.grid_location or ''} {query.action_type or ''}"
-        
-        # 1. Recall relevant memories from Hindsight
-        memories = self.memory.recall(query=full_query_text, limit=4)
-        
-        # Extract location hints if provided
-        q_grid = self._normalize(query.grid_location) if query.grid_location else ""
-        q_level = self._normalize(query.level) if query.level else ""
-        
-        # Find which RFIs were matched and geographically relevant
-        matched_rfis: List[RFIDocument] = []
-        for mem in memories:
-            rfi_id_meta = mem.get("metadata", {}).get("rfi_id")
-            candidate_rfis = []
-            if rfi_id_meta and rfi_id_meta in self.rfis:
-                candidate_rfis.append(self.rfis[rfi_id_meta])
-            else:
-                for rfi_id, rfi_obj in self.rfis.items():
-                    if rfi_id.lower() in mem.get("text", "").lower():
-                        candidate_rfis.append(rfi_obj)
-
-            for cand in candidate_rfis:
-                cand_grid = self._normalize(cand.grid_location)
-                cand_level = self._normalize(cand.level)
-                
-                # If specific location requested, ensure location matches
-                location_match = True
-                if q_grid and cand_grid != q_grid:
-                    location_match = False
-                if q_level and cand_level != q_level:
-                    # Allow vertical shear/structural dependencies across floor if specifically tagged
-                    if not ("seismic" in cand.tags or "structural" in cand.tags and cand_grid == q_grid):
-                        location_match = False
-
-                if location_match and cand not in matched_rfis:
-                    matched_rfis.append(cand)
-
-        # Fallback direct grid check
-        if not matched_rfis and q_grid:
-            for rfi_obj in self.rfis.values():
-                if self._normalize(rfi_obj.grid_location) == q_grid:
-                    if not q_level or self._normalize(rfi_obj.level) == q_level:
-                        matched_rfis.append(rfi_obj)
-
-        # 2. If no modifications clash with this location, report safe to proceed
-        if not matched_rfis:
-            return WorkerQueryResponse(
-                status=HazardLevel.SAFE_PROCEED,
-                verdict="PROCEED WITH STANDARD SPECIFICATIONS",
-                summary_message="No conflicting architectural modifications or safety directives found in Hindsight memory for this location.",
-                hazard_details="Base drawing specifications apply. Standard inspection and safety PPE required.",
-                recalled_rfis=[],
-                critical_directives=["Follow standard project specifications and wear required PPE."],
-                recommended_alternative="Proceed at planned location following base drawing specifications.",
-                rework_cost_prevented=0.0,
-                hindsight_memory_hits=len(memories),
-                stateless_contrast="Both stateless and memory agents allow work here, as no modifications exist."
-            )
-
-        # 3. Assess highest severity
-        has_critical = any(r.hazard_level == HazardLevel.CRITICAL_STOP_WORK for r in matched_rfis)
-        has_caution = any(r.hazard_level == HazardLevel.CAUTION_VERIFY for r in matched_rfis)
-
-        status = HazardLevel.CRITICAL_STOP_WORK if has_critical else (
-            HazardLevel.CAUTION_VERIFY if has_caution else HazardLevel.SAFE_PROCEED
         )
 
-        all_directives: List[str] = []
-        total_risk_prevented = 0.0
-        rfi_summaries = []
-
-        for rfi in matched_rfis:
-            all_directives.extend(rfi.critical_directives)
-            total_risk_prevented += rfi.rework_cost_risk
-            rfi_summaries.append({
-                "id": rfi.id,
-                "title": rfi.title,
-                "date": rfi.date_issued,
-                "discipline": rfi.discipline.value,
-                "grid": rfi.grid_location,
-                "level": rfi.level,
-                "resolution": rfi.approved_resolution,
-                "hazard_level": rfi.hazard_level.value,
-                "risk_cost": rfi.rework_cost_risk
-            })
-
-        primary_rfi = matched_rfis[0]
-        if "post-tension" in primary_rfi.tags or "b4" in self._normalize(primary_rfi.grid_location):
-            alternative = (
-                "DO NOT DRILL AT GRID B-4. Divert all conduit/pipe penetrations to designated "
-                "MEP Chase sleeve at Grid B-6 (authorized per RFI-108)."
-            )
-            verdict = "🚨 CRITICAL STRUCTURAL HAZARD: STOP WORK IMMEDIATELY"
-            hazard_details = (
-                f"Severing risk: Post-tension tendons under 33,000 lbs force embedded at 110mm depth "
-                f"per {primary_rfi.id}. Coring here could trigger slab failure and severe personnel injury."
-            )
-        elif "electrical" in primary_rfi.tags or "c2" in self._normalize(primary_rfi.grid_location):
-            alternative = (
-                "Limit all drywall fasteners to 25mm depth maximum. If drilling deeper than 25mm is required, "
-                "schedule an electrical shutdown with Site Operations."
-            )
-            verdict = "⚡ ARC FLASH HAZARD: HIGH VOLTAGE BUSWAY IN CAVITY"
-            hazard_details = (
-                f"Energized 480V/800A bus duct rerouted horizontally behind drywall at +2800mm AFF per {primary_rfi.id}. "
-                f"Long anchors risk phase-to-ground flashover."
-            )
-        elif "fire-safety" in primary_rfi.tags or "e3" in self._normalize(primary_rfi.grid_location):
-            alternative = (
-                "Install UL System W-L-1054 intumescent firestop collars for any sleeve. "
-                "Record sleeve serial in the Firestop Submittal Log."
-            )
-            verdict = "🔥 FIRE CODE WARNING: 2-HOUR RATED BARRIER"
-            hazard_details = (
-                f"Partition upgraded to 2-hour fire wall per {primary_rfi.id}. Unsealed penetrations "
-                f"will fail occupancy inspection and prevent building handover."
-            )
+        # If simulating Shift 1 (before adverse reactions occurred in Shift 4/5/6/7)
+        if simulated_shift_limit is not None and simulated_shift_limit < 4 and not custom_triggered:
+            hindsight_result = {
+                "verdict": "CAUTION — BASELINE MEMORY ONLY (SHIFT #1)",
+                "recalled_shift": "Shift #1 (Admission Baseline Only)",
+                "recalled_author": "Admission Team",
+                "clinical_why": (
+                    f"At Shift #{simulated_shift_limit}, only baseline admission data has been retained. "
+                    "Subsequent drug sensitivities and hemodynamic thresholds from Shifts #4–#20 have not occurred yet."
+                ),
+                "safe_alternative": "Monitor bedside response closely and retain all shift observations into Hindsight Cloud so future shifts learn automatically.",
+                "cost_saved_usd": 0,
+            }
+        elif is_safe_protocol_selected:
+            base_safe = patient["hindsight_safe_protocol"]
+            hindsight_result = {
+                "verdict": "APPROVED — SAFE HISTORY-VERIFIED MEDICINE",
+                "recalled_shift": base_safe["recalled_shift"],
+                "recalled_author": base_safe["recalled_author"],
+                "clinical_why": (
+                    f"This medicine matches the safe protocol established after {base_safe['recalled_shift']}. "
+                    "No conflict with past nursing reactions."
+                ),
+                "safe_alternative": base_safe["safe_alternative"],
+                "cost_saved_usd": base_safe.get("cost_saved_usd", 42000),
+            }
+        elif custom_triggered:
+            hindsight_result = {
+                "verdict": f"BLOCKED — LIVE BEDSIDE ALERT ({custom_triggered['category'].upper()})",
+                "recalled_shift": custom_triggered["shift_label"],
+                "recalled_author": custom_triggered["author_name"],
+                "clinical_why": f"Live recalled nursing memory ({custom_triggered['memory_id']}): {custom_triggered['content']}",
+                "safe_alternative": (
+                    f"Hold conflicting order ({proposed_order}). Follow bedside nursing directive retained by "
+                    f"{custom_triggered['author_name']} and reassess after repeat bedside vitals."
+                ),
+                "cost_saved_usd": 45000,
+            }
         else:
-            alternative = primary_rfi.approved_resolution
-            verdict = f"FIELD DIRECTIVE ACTIVE: {primary_rfi.id}"
-            hazard_details = f"Field revision recorded on {primary_rfi.date_issued} by {primary_rfi.discipline.value}."
+            base_safe = dict(patient["hindsight_safe_protocol"])
+            # Enrich with Groq LLM if configured
+            sys_prompt = (
+                "You are WardSense ICU, a clinical continuity agent powered by Vectorize Hindsight memory. "
+                "Return JSON with keys: verdict, clinical_why, safe_alternative."
+            )
+            usr_prompt = (
+                f"Patient: {patient['name']} ({patient['admission_diagnosis']}). "
+                f"Proposed Order: {proposed_order}. "
+                f"Recalled Hindsight Shift Memories: {[m['content'] for m in critical_memories[:3]]}."
+            )
+            hindsight_result = llm_engine.generate_clinical_decision(
+                system_prompt=sys_prompt,
+                user_prompt=usr_prompt,
+                fallback_response=base_safe,
+            )
 
-        stateless_contrast = (
-            f"A stateless AI reading initial drawings would approve this work because the original blueprint Rev-0 "
-            f"did not show the modification. Hindsight recalled {primary_rfi.id} from memory, preventing "
-            f"an estimated ${total_risk_prevented:,.2f} rework catastrophe."
+        return {
+            "patient": {
+                "patient_id": patient["patient_id"],
+                "name": patient["name"],
+                "bed_number": patient["bed_number"],
+                "admission_diagnosis": patient["admission_diagnosis"],
+                "vitals": patient["vitals"],
+            },
+            "proposed_order": proposed_order,
+            "simulated_shift_limit": simulated_shift_limit or patient["current_shift"],
+            "stateless_ai": patient["stateless_ai_response"],
+            "hindsight_agent": hindsight_result,
+            "hindsight_telemetry": {
+                "bank_id": recall_data["bank_id"],
+                "mode": recall_data["mode"],
+                "latency_ms": recall_data["latency_ms"],
+                "recalled_memories_count": len(memories),
+                "recalled_memories": memories[:5],
+            },
+        }
+
+    def generate_ipass_handoff(
+        self, patient_id: str, simulated_shift: int | None = None
+    ) -> dict[str, Any]:
+        """
+        Synthesize a standardized I-PASS Clinical Shift Handoff Brief from Hindsight memory.
+        I - Illness Severity
+        P - Patient Summary
+        A - Action List (Pending Cross-Shift Tasks)
+        S - Situation Awareness & Contingency Planning
+        S - Synthesis by Receiver
+        """
+        patient = get_patient_by_id(patient_id)
+        if not patient:
+            raise ValueError(f"Unknown patient_id: {patient_id}")
+
+        effective_shift = simulated_shift or patient["current_shift"]
+        recall_data = memory_engine.recall_patient_context(
+            patient_id=patient_id,
+            query="I-PASS shift handoff summary adverse drug reactions pending actions contingencies",
+            max_shift=effective_shift,
         )
+        memories = recall_data["memories"]
+        tasks = get_shift_tasks(patient_id=patient_id)
+        safe_proto = patient["hindsight_safe_protocol"]
 
-        base_resp = WorkerQueryResponse(
-            status=status,
-            verdict=verdict,
-            summary_message=(
-                f"Hindsight retrieved {len(matched_rfis)} relevant RFI records for {primary_rfi.level}, {primary_rfi.grid_location}. "
-                f"Directives apply."
-            ),
-            hazard_details=hazard_details,
-            recalled_rfis=rfi_summaries,
-            critical_directives=all_directives[:4],
-            recommended_alternative=alternative,
-            rework_cost_prevented=total_risk_prevented,
-            hindsight_memory_hits=len(memories),
-            stateless_contrast=stateless_contrast
-        )
+        # Learning curve maturity score
+        if effective_shift <= 2:
+            maturity_stage = "Stage 1: Baseline Admission Context (Generic Protocol Level)"
+            precision_score = 38
+        elif effective_shift <= 8:
+            maturity_stage = "Stage 2: Adverse Reaction & Threshold Adaptation (Personalized Level)"
+            precision_score = 78
+        else:
+            maturity_stage = "Stage 3: Longitudinal Multi-Shift Clinical Mastery (Zero-Drop Continuity)"
+            precision_score = 98
 
-        # Synthesize with Groq LLM if configured
-        return self._synthesize_with_groq(query, matched_rfis, base_resp)
+        return {
+            "patient_id": patient["patient_id"],
+            "patient_name": patient["name"],
+            "bed_number": patient["bed_number"],
+            "mrn": patient["mrn"],
+            "effective_shift": effective_shift,
+            "learning_curve": {
+                "stage": maturity_stage,
+                "precision_score": precision_score,
+                "memories_retained": len(memories),
+            },
+            "ipass": {
+                "illness_severity": patient["illness_severity"],
+                "patient_summary": (
+                    f"{patient['age']}{patient['gender']} ({patient['admission_diagnosis']}). "
+                    f"Current Vitals: BP {patient['vitals']['bp']}, HR {patient['vitals']['hr']}, "
+                    f"SpO2 {patient['vitals']['spo2']}, Serum K+ {patient['vitals']['k_plus']}, "
+                    f"24h Fluid Balance {patient['vitals']['fluid_balance']}."
+                ),
+                "action_list": [t for t in tasks if t["status"] == "PENDING"],
+                "situation_awareness_contingency": (
+                    f"{safe_proto['verdict']} ({safe_proto['recalled_shift']}): "
+                    f"{safe_proto['clinical_why']} -> MANDATED ACTION: {safe_proto['safe_alternative']}"
+                    if effective_shift >= 4
+                    else "Standard post-admission monitoring; no longitudinal contraindications retained yet at Shift #1."
+                ),
+                "synthesis_prompt": (
+                    f"Incoming shift clinician acknowledges active constraint from {safe_proto['recalled_shift']} "
+                    f"and confirms {len([t for t in tasks if t['status'] == 'PENDING'])} pending cross-shift tasks."
+                ),
+            },
+            "recalled_memories": memories,
+            "telemetry": {
+                "bank_id": recall_data["bank_id"],
+                "mode": recall_data["mode"],
+                "latency_ms": recall_data["latency_ms"],
+            },
+        }
 
-    def get_benchmarks(self) -> List[ComparisonItem]:
-        return BENCHMARK_SCENARIOS
+
+wardsense_agent = WardSenseAgent()

@@ -1,43 +1,32 @@
 #!/usr/bin/env python3
-"""Main Entrypoint for SiteSense RFI: Zero-Rework Construction Agent."""
+"""Unified Entrypoint for WardSense ICU (Web Server, Rich CLI Demo, and Pytest Suite)."""
 import sys
+import subprocess
 import uvicorn
-from src.config import HOST, PORT
+from src.config import settings
+from src.database import init_db
 
 
-def print_help():
-    print("""
-SiteSense RFI - Zero-Rework Construction Agent
-Powered by Vectorize Hindsight
+def main() -> None:
+    init_db()
+    cmd = sys.argv[1].lower() if len(sys.argv) > 1 else "web"
 
-Usage:
-  python3 run.py web        Start the Web Dashboard and API server (http://localhost:8000)
-  python3 run.py demo       Run the Rich CLI Interactive Simulation
-  python3 run.py compare    View Stateless vs Hindsight side-by-side benchmark cases
-  python3 run.py rfis       List all currently retained RFIs in memory
-  python3 run.py test       Run automated verification test suite
-  python3 run.py query "q"  Query the agent with custom field question
-""")
-
-
-def main():
-    if len(sys.argv) < 2:
-        print_help()
-        sys.exit(0)
-
-    cmd = sys.argv[1].lower()
     if cmd == "web":
-        print(f"🚀 Starting SiteSense Web Server on http://{HOST}:{PORT} ...")
-        uvicorn.run("src.server:app", host=HOST, port=PORT, reload=False)
-    elif cmd in ["demo", "compare", "rfis", "query"]:
-        from src.cli import main as cli_main
-        sys.argv = [sys.argv[0]] + sys.argv[1:]
-        cli_main()
+        print(
+            f"\n🏥 Launching WardSense ICU Platform at http://localhost:{settings.port}\n"
+            f"   • Sign-In & Role Switcher : http://localhost:{settings.port}/login\n"
+            f"   • Portal 1 (Hospital CMO) : http://localhost:{settings.port}/hospital\n"
+            f"   • Portal 2 (Doctor MD)    : http://localhost:{settings.port}/doctor\n"
+            f"   • Portal 3 (Nurse RN)     : http://localhost:{settings.port}/nurse\n"
+        )
+        uvicorn.run("src.server:app", host=settings.host, port=settings.port, reload=True)
+    elif cmd in ("demo", "compare"):
+        from src.cli_demo import run_terminal_demo
+        run_terminal_demo()
     elif cmd == "test":
-        import pytest
-        sys.exit(pytest.main([]))
+        raise SystemExit(subprocess.call([sys.executable, "-m", "pytest", "-v"]))
     else:
-        print_help()
+        print("Usage: python3 run.py [web|demo|test]")
 
 
 if __name__ == "__main__":
