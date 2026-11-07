@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiteSense RFI • Zero-Rework Construction Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfeff',
+              500: '#06b6d4',
+              600: '#0891b2',
+              900: '#164e63',
+            },
+            hazard: {
+              red: '#ef4444',
+              yellow: '#f59e0b',
+              green: '#10b981'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .pulse-indicator { animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    .grid-cell { transition: all 0.2s ease-in-out; }
+    .grid-cell:hover { transform: scale(1.06); z-index: 10; }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen font-sans antialiased">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="h-10 w-10 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i class="fa-solid fa-hard-hat text-white text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-xl font-black tracking-tight text-white">SiteSense <span class="text-cyan-400">RFI</span></span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">Zero-Rework Agent</span>
+          </div>
+          <p class="text-xs text-slate-400">Autonomous Construction Memory • Powered by <span class="text-cyan-400 font-semibold">Vectorize Hindsight</span></p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-4">
+        <div class="hidden md:flex items-center space-x-2 text-xs bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-indicator"></span>
+          <span class="text-slate-300">Memory Bank:</span>
+          <span class="font-mono text-cyan-300" id="bank-id-tag">omega_tower_construction_rfis</span>
+        </div>
+        <button onclick="openIngestModal()" class="text-xs bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium px-3.5 py-2 rounded-lg shadow-md transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-plus text-xs"></i>
+          <span>Ingest New RFI</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Metric Banner -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="text-xs uppercase tracking-wider text-slate-400 font-medium">Rework Cost Prevented</div>
+        <div class="text-2xl font-black text-emerald-400 mt-1" id="stat-prevented">$322,000</div>
+        <div class="text-xs text-slate-400 mt-1">Across 3 critical live clashes</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="text-xs uppercase tracking-wider text-slate-400 font-medium">Hindsight Active RFIs</div>
+        <div class="text-2xl font-black text-cyan-400 mt-1" id="stat-rfis-count">6</div>
+        <div class="text-xs text-slate-400 mt-1">Ingested in persistent memory</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="text-xs uppercase tracking-wider text-slate-400 font-medium">Life-Safety Hazards</div>
+        <div class="text-2xl font-black text-red-400 mt-1" id="stat-hazards">3 Severe</div>
+        <div class="text-xs text-slate-400 mt-1">PT tendons & 480V busway</div>
+      </div>
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="text-xs uppercase tracking-wider text-slate-400 font-medium">Agent Recall Latency</div>
+        <div class="text-2xl font-black text-purple-400 mt-1">12ms</div>
+        <div class="text-xs text-slate-400 mt-1">Temporal knowledge graph</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Workspace -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- LEFT COLUMN: Interactive Site Blueprint Grid Map (5 Cols) -->
+      <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-2">
+              <i class="fa-solid fa-layer-group text-cyan-400"></i>
+              <h2 class="text-base font-bold text-white tracking-wide">Interactive Floor Hazard Radar</h2>
+            </div>
+            <!-- Floor Selector -->
+            <div class="inline-flex rounded-lg bg-slate-800 p-1 border border-slate-700 text-xs">
+              <button onclick="setFloor('Level 1')" class="floor-btn px-2.5 py-1 rounded-md text-slate-300 font-medium hover:text-white" data-floor="Level 1">L1</button>
+              <button onclick="setFloor('Level 2')" class="floor-btn px-2.5 py-1 rounded-md text-slate-300 font-medium hover:text-white" data-floor="Level 2">L2</button>
+              <button onclick="setFloor('Level 3')" class="floor-btn px-2.5 py-1 rounded-md bg-cyan-600 text-white font-bold shadow" data-floor="Level 3">L3</button>
+              <button onclick="setFloor('Level 4')" class="floor-btn px-2.5 py-1 rounded-md text-slate-300 font-medium hover:text-white" data-floor="Level 4">L4</button>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 mb-4">
+            Click on any structural grid cell to instantly dispatch a field check. Red cells represent active high-risk RFIs recalled from memory.
+          </p>
+
+          <!-- 2D Grid Matrix -->
+          <div class="bg-[#070b13] p-4 rounded-xl border border-slate-800/80">
+            <div class="flex justify-between text-[11px] font-mono text-slate-500 mb-2 px-6">
+              <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>
+            </div>
+            <div class="space-y-2" id="grid-container">
+              <!-- Dynamically rendered rows A to E -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <div class="flex items-center space-x-1.5">
+            <span class="w-3 h-3 rounded bg-red-500/80 border border-red-400 inline-block"></span>
+            <span>Stop-Work Hazard</span>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <span class="w-3 h-3 rounded bg-amber-500/80 border border-amber-400 inline-block"></span>
+            <span>Caution / Code</span>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <span class="w-3 h-3 rounded bg-cyan-500/40 border border-cyan-400 inline-block"></span>
+            <span>Approved Sleeve</span>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <span class="w-3 h-3 rounded bg-slate-800 border border-slate-700 inline-block"></span>
+            <span>Base Spec</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: Worker Query & Hindsight Hazard Verification (7 Cols) -->
+      <div class="lg:col-span-7 space-y-6">
+
+        <!-- Query Box -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center space-x-2">
+              <i class="fa-solid fa-headset text-cyan-400"></i>
+              <h2 class="text-base font-bold text-white tracking-wide">Site Worker Radio & Query Console</h2>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">Location: <span class="text-cyan-400 font-bold" id="current-location-tag">Level 3, Grid B-4</span></span>
+          </div>
+
+          <!-- Quick Scenario Pills -->
+          <div class="flex flex-wrap gap-1.5 mb-3">
+            <button onclick="loadScenario(0)" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-cyan-300 px-2.5 py-1 rounded-md border border-slate-700 transition">
+              💥 Level 3 B-4: Core Drill Post-Tension Wall
+            </button>
+            <button onclick="loadScenario(1)" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-amber-300 px-2.5 py-1 rounded-md border border-slate-700 transition">
+              ⚡ Level 2 C-2: 75mm Anchor into 480V Busway
+            </button>
+            <button onclick="loadScenario(2)" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-purple-300 px-2.5 py-1 rounded-md border border-slate-700 transition">
+              🔥 Level 4 E-3: Penetrate 2-Hour Fire Wall
+            </button>
+          </div>
+
+          <form id="query-form" onsubmit="submitQuery(event)" class="space-y-3">
+            <div class="relative">
+              <textarea id="worker-question" rows="3" class="w-full bg-[#070b13] border border-slate-700 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-sans" placeholder="Ask a question about planned drilling, penetrations, or equipment installations..."></textarea>
+              <button type="button" onclick="simulateVoiceInput()" title="Simulate Push-To-Talk Radio" class="absolute bottom-3 right-3 text-slate-400 hover:text-cyan-400 p-2 rounded-lg bg-slate-800/80 border border-slate-700 transition">
+                <i class="fa-solid fa-microphone text-xs"></i>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div class="text-xs text-slate-400 flex items-center space-x-1">
+                <i class="fa-solid fa-brain text-cyan-400"></i>
+                <span>Queries Hindsight memory bank before work begins</span>
+              </div>
+              <button type="submit" id="submit-btn" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-cyan-600/30 transition flex items-center space-x-2">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Verify Against Memory</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Hazard Result Box -->
+        <div id="result-container" class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg hidden">
+          <!-- Dynamic Hazard Content -->
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- SIDE-BY-SIDE COMPARISON: Stateless AI vs Hindsight Agent -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+      <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+        <div>
+          <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+            <i class="fa-solid fa-scale-unbalanced text-cyan-400"></i>
+            <span>The Proof: Stateless LLM vs Hindsight-Augmented Agent</span>
+          </h3>
+          <p class="text-xs text-slate-400">See the exact difference when an agent retains construction memory versus reading static blueprints.</p>
+        </div>
+        <div class="bg-emerald-950/70 border border-emerald-800 px-3 py-1.5 rounded-lg text-xs font-mono text-emerald-300 font-bold">
+          Rework Prevented: $185,000
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Stateless Box -->
+        <div class="bg-red-950/20 border border-red-900/50 rounded-xl p-5 relative overflow-hidden">
+          <div class="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-bl-lg">
+            Without Hindsight (Failure)
+          </div>
+          <div class="flex items-center space-x-2 text-red-400 font-bold text-sm mb-3">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>Stateless AI / Base Blueprint RAG</span>
+          </div>
+          <div class="bg-[#070b13] p-3 rounded-lg border border-red-900/40 text-xs text-slate-300 mb-3 font-mono">
+            "According to the base architectural drawing Rev-0, the concrete slab at Level 3, Grid B-4 is standard 8-inch reinforced concrete. You may proceed with diamond core drill."
+          </div>
+          <div class="border-t border-red-900/30 pt-3">
+            <div class="text-[11px] font-bold text-red-400 uppercase tracking-wider mb-1">Catastrophic Consequence:</div>
+            <p class="text-xs text-red-200">
+              Worker severs post-tension tendon under 33,000 lbs force. Atrium loses structural support. Project halted 4 weeks. Emergency repair bill: <span class="font-bold underline">$185,000</span>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Hindsight Box -->
+        <div class="bg-emerald-950/20 border border-emerald-800/60 rounded-xl p-5 relative overflow-hidden">
+          <div class="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-bl-lg">
+            SiteSense with Hindsight (Zero-Rework)
+          </div>
+          <div class="flex items-center space-x-2 text-emerald-400 font-bold text-sm mb-3">
+            <i class="fa-solid fa-brain"></i>
+            <span>SiteSense RFI Agent</span>
+          </div>
+          <div class="bg-[#070b13] p-3 rounded-lg border border-emerald-900/40 text-xs text-slate-300 mb-3 font-mono">
+            "🚨 STOP WORK IMMEDIATELY! Recalled RFI-104 (March 12): Structural added 4x post-tension tendons at 110mm depth. Coring will cause catastrophic failure. Divert to approved MEP sleeve at Grid B-6."
+          </div>
+          <div class="border-t border-emerald-900/30 pt-3">
+            <div class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">Outcome:</div>
+            <p class="text-xs text-emerald-200">
+              Disaster averted in 12 milliseconds. Worker safely redirected. $185,000 preserved, zero construction rework, zero injuries.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hindsight Memory Bank Live Explorer -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-database text-cyan-400"></i>
+          <h3 class="text-base font-bold text-white tracking-wide">Hindsight Memory Bank Explorer (Retained RFIs)</h3>
+        </div>
+        <button onclick="refreshMemories()" class="text-xs text-slate-400 hover:text-cyan-400 transition flex items-center space-x-1">
+          <i class="fa-solid fa-arrows-rotate"></i>
+          <span>Refresh Bank</span>
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-800/80 text-slate-400 font-mono uppercase text-[11px] border-b border-slate-700">
+            <tr>
+              <th class="py-2.5 px-3">RFI ID</th>
+              <th class="py-2.5 px-3">Date</th>
+              <th class="py-2.5 px-3">Discipline</th>
+              <th class="py-2.5 px-3">Location</th>
+              <th class="py-2.5 px-3">Title & Summary</th>
+              <th class="py-2.5 px-3">Hazard Level</th>
+              <th class="py-2.5 px-3 text-right">Rework Risk</th>
+            </tr>
+          </thead>
+          <tbody id="rfis-table-body" class="divide-y divide-slate-800 text-slate-300">
+            <!-- Loaded dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Ingest Modal -->
+  <div id="ingest-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative">
+      <button onclick="closeIngestModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="flex items-center space-x-2 mb-4">
+        <div class="h-8 w-8 rounded bg-cyan-600/30 text-cyan-400 flex items-center justify-center font-bold">
+          <i class="fa-solid fa-file-circle-plus"></i>
+        </div>
+        <h3 class="text-lg font-bold text-white">Ingest New RFI into Hindsight Memory</h3>
+      </div>
+      <p class="text-xs text-slate-400 mb-4">
+        When an engineer issues a new RFI, Hindsight stores it into the persistent memory bank so all workers immediately gain visibility.
+      </p>
+
+      <form id="ingest-form" onsubmit="submitNewRfi(event)" class="space-y-3 text-xs">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">RFI ID</label>
+            <input type="text" id="new-id" required placeholder="e.g. RFI-180" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Date Approved</label>
+            <input type="date" id="new-date" required class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 mb-1 font-medium">Title</label>
+          <input type="text" id="new-title" required placeholder="e.g. Relocation of Medical Nitrogen Line" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Floor Level</label>
+            <select id="new-level" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+              <option value="Level 1">Level 1</option>
+              <option value="Level 2">Level 2</option>
+              <option value="Level 3" selected>Level 3</option>
+              <option value="Level 4">Level 4</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Grid Coordinate</label>
+            <input type="text" id="new-grid" required placeholder="e.g. Grid C-5" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Discipline</label>
+            <select id="new-discipline" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+              <option value="Structural">Structural</option>
+              <option value="Electrical">Electrical</option>
+              <option value="Mechanical & Plumbing">MEP</option>
+              <option value="Fire Protection">Fire Protection</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 mb-1 font-medium">Approved Resolution / Directives</label>
+          <textarea id="new-resolution" rows="3" required placeholder="Describe engineering change and any forbidden actions..." class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Hazard Level</label>
+            <select id="new-hazard" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+              <option value="CRITICAL_STOP_WORK">CRITICAL STOP WORK</option>
+              <option value="CAUTION_VERIFY">CAUTION VERIFY</option>
+              <option value="SAFE_PROCEED">SAFE PROCEED</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 mb-1 font-medium">Estimated Rework Risk ($)</label>
+            <input type="number" id="new-cost" required value="75000" class="w-full bg-[#070b13] border border-slate-700 rounded-lg p-2.5 text-white">
+          </div>
+        </div>
+
+        <div class="pt-3 flex justify-end space-x-2">
+          <button type="button" onclick="closeIngestModal()" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 font-bold text-white shadow-lg">Retain in Hindsight</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentFloor = "Level 3";
+    let currentGrid = "Grid B-4";
+    let benchmarks = [];
+
+    const scenarios = [
+      {
+        question: "Can I core-drill a 4-inch sleeve through the slab at Level 3, Grid B-4 to run a plumbing waste drain?",
+        floor: "Level 3",
+        grid: "Grid B-4"
+      },
+      {
+        question: "I'm mounting heavy equipment struts along the drywall at Level 2, Grid C-2. Can I use 75mm sleeve anchors?",
+        floor: "Level 2",
+        grid: "Grid C-2"
+      },
+      {
+        question: "I cut an 8-inch sleeve through Corridor wall E-3 on Level 4 for telecom cables. Do I just caulk it with standard acoustic sealant?",
+        floor: "Level 4",
+        grid: "Grid E-3"
+      }
+    ];
+
+    document.addEventListener("DOMContentLoaded", () => {
+      renderGrid();
+      refreshMemories();
+      loadBenchmarks();
+      loadScenario(0);
+      document.getElementById('new-date').value = new Date().toISOString().split('T')[0];
+    });
+
+    function setFloor(floor) {
+      currentFloor = floor;
+      document.querySelectorAll(".floor-btn").forEach(btn => {
+        if (btn.dataset.floor === floor) {
+          btn.className = "floor-btn px-2.5 py-1 rounded-md bg-cyan-600 text-white font-bold shadow";
+        } else {
+          btn.className = "floor-btn px-2.5 py-1 rounded-md text-slate-300 font-medium hover:text-white";
+        }
+      });
+      renderGrid();
+    }
+
+    function renderGrid() {
+      const container = document.getElementById("grid-container");
+      container.innerHTML = "";
+      const rows = ["A", "B", "C", "D", "E"];
+
+      rows.forEach(rowLetter => {
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "flex items-center space-x-2";
+
+        const label = document.createElement("span");
+        label.className = "w-4 text-xs font-mono font-bold text-slate-500 text-right";
+        label.innerText = rowLetter;
+        rowDiv.appendChild(label);
+
+        const cellsDiv = document.createElement("div");
+        cellsDiv.className = "grid grid-cols-8 gap-1.5 flex-1";
+
+        for (let col = 1; col <= 8; col++) {
+          const gridId = `Grid ${rowLetter}-${col}`;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.onclick = () => selectGrid(rowLetter, col);
+
+          let cellClass = "grid-cell h-7 rounded text-[10px] font-mono font-bold flex items-center justify-center border ";
+
+          // Floor-specific highlights
+          if (currentFloor === "Level 3" && gridId === "Grid B-4") {
+            cellClass += "bg-red-500/80 border-red-400 text-white shadow-lg shadow-red-500/30 pulse-indicator";
+          } else if (currentFloor === "Level 3" && gridId === "Grid B-6") {
+            cellClass += "bg-cyan-500/40 border-cyan-400 text-cyan-200";
+          } else if (currentFloor === "Level 3" && gridId === "Grid D-1") {
+            cellClass += "bg-amber-500/70 border-amber-400 text-white";
+          } else if (currentFloor === "Level 2" && gridId === "Grid C-2") {
+            cellClass += "bg-red-500/80 border-red-400 text-white pulse-indicator";
+          } else if (currentFloor === "Level 2" && gridId === "Grid B-4") {
+            cellClass += "bg-red-500/60 border-red-400 text-white";
+          } else if (currentFloor === "Level 4" && gridId === "Grid E-3") {
+            cellClass += "bg-amber-500/70 border-amber-400 text-white";
+          } else if (currentFloor === "Level 1" && gridId === "Grid A-6") {
+            cellClass += "bg-cyan-500/40 border-cyan-400 text-cyan-200";
+          } else {
+            cellClass += "bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-500 hover:text-white";
+          }
+
+          btn.className = cellClass;
+          btn.innerText = `${rowLetter}${col}`;
+          cellsDiv.appendChild(btn);
+        }
+
+        rowDiv.appendChild(cellsDiv);
+        container.appendChild(rowDiv);
+      });
+    }
+
+    function selectGrid(row, col) {
+      currentGrid = `Grid ${row}-${col}`;
+      document.getElementById("current-location-tag").innerText = `${currentFloor}, ${currentGrid}`;
+      document.getElementById("worker-question").value = `Can I core-drill or install fasteners at ${currentFloor}, ${currentGrid}?`;
+      submitQuery();
+    }
+
+    function loadScenario(idx) {
+      const s = scenarios[idx];
+      setFloor(s.floor);
+      currentGrid = s.grid;
+      document.getElementById("current-location-tag").innerText = `${s.floor}, ${s.grid}`;
+      document.getElementById("worker-question").value = s.question;
+      submitQuery();
+    }
+
+    function simulateVoiceInput() {
+      const q = document.getElementById("worker-question");
+      const sampleVoices = [
+        "Foreman Mike here on radio: we're setting up the core drill at Level 3 Grid B-4. Are we clear to drill?",
+        "Subcontractor query: Can we mount heavy seismic cable trays along Level 2 Grid C-2 drywall?",
+        "Site inspection check: Do we need firestop sleeves for corridor E-3 penetrations on Level 4?"
+      ];
+      const pick = sampleVoices[Math.floor(Math.random() * sampleVoices.length)];
+      q.value = pick;
+      submitQuery();
+    }
+
+    async function submitQuery(e) {
+      if (e) e.preventDefault();
+      const question = document.getElementById("worker-question").value.trim();
+      if (!question) return;
+
+      const submitBtn = document.getElementById("submit-btn");
+      submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i><span>Querying Memory...</span>`;
+
+      try {
+        const res = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: question,
+            level: currentFloor,
+            grid_location: currentGrid
+          })
+        });
+
+        const data = await res.json();
+        renderResult(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        submitBtn.innerHTML = `<i class="fa-solid fa-shield-halved"></i><span>Verify Against Memory</span>`;
+      }
+    }
+
+    function renderResult(data) {
+      const container = document.getElementById("result-container");
+      container.classList.remove("hidden");
+
+      let borderClass = "border-red-500/60 bg-red-950/20";
+      let badgeClass = "bg-red-500 text-white";
+      let icon = "fa-triangle-exclamation";
+
+      if (data.status === "CAUTION_VERIFY") {
+        borderClass = "border-amber-500/60 bg-amber-950/20";
+        badgeClass = "bg-amber-500 text-black";
+        icon = "fa-shield-halved";
+      } else if (data.status === "SAFE_PROCEED") {
+        borderClass = "border-emerald-500/60 bg-emerald-950/20";
+        badgeClass = "bg-emerald-500 text-white";
+        icon = "fa-circle-check";
+      }
+
+      let rfiPills = "";
+      if (data.recalled_rfis && data.recalled_rfis.length > 0) {
+        data.recalled_rfis.forEach(r => {
+          rfiPills += `
+            <div class="bg-[#070b13] p-3 rounded-lg border border-slate-700/80 mb-2">
+              <div class="flex items-center justify-between mb-1">
+                <span class="font-bold text-cyan-300 font-mono">${r.id}: ${r.title}</span>
+                <span class="text-[11px] text-slate-400 font-mono">${r.date}</span>
+              </div>
+              <p class="text-xs text-slate-300 mb-2">${r.resolution}</p>
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400 font-semibold">${r.discipline} • ${r.grid}</span>
+                <span class="text-red-400 font-mono font-bold">Rework Risk: $${Number(r.risk_cost).toLocaleString()}</span>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      let directivesList = "";
+      if (data.critical_directives && data.critical_directives.length > 0) {
+        data.critical_directives.forEach(d => {
+          directivesList += `<li class="flex items-start space-x-2 text-xs text-slate-200">
+            <span class="text-red-400 mt-0.5">⛔</span>
+            <span>${d}</span>
+          </li>`;
+        });
+      }
+
+      container.innerHTML = `
+        <div class="border rounded-xl p-5 ${borderClass}">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full ${badgeClass} flex items-center space-x-1.5 shadow">
+              <i class="fa-solid ${icon}"></i>
+              <span>${data.status.replace(/_/g, ' ')}</span>
+            </span>
+            <span class="text-xs font-mono text-emerald-400 font-bold bg-slate-900 px-3 py-1 rounded-lg border border-slate-700">
+              Rework Prevented: $${Number(data.rework_cost_prevented).toLocaleString()}
+            </span>
+          </div>
+
+          <h3 class="text-base font-extrabold text-white mb-2">${data.verdict}</h3>
+          <p class="text-xs text-slate-300 mb-4">${data.hazard_details}</p>
+
+          ${directivesList ? `
+            <div class="mb-4">
+              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 font-mono">Enforced Site Directives:</div>
+              <ul class="space-y-1.5 bg-black/40 p-3 rounded-lg border border-slate-800">${directivesList}</ul>
+            </div>
+          ` : ''}
+
+          ${rfiPills ? `
+            <div class="mb-4">
+              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 font-mono">Hindsight Memory Recall:</div>
+              ${rfiPills}
+            </div>
+          ` : ''}
+
+          <div class="bg-cyan-950/40 border border-cyan-800/80 rounded-lg p-3 text-xs">
+            <div class="font-bold text-cyan-300 mb-1 flex items-center space-x-1">
+              <i class="fa-solid fa-compass"></i>
+              <span>Approved Safe Alternative:</span>
+            </div>
+            <p class="text-slate-200">${data.recommended_alternative}</p>
+          </div>
+        </div>
+      `;
+    }
+
+    async function refreshMemories() {
+      try {
+        const res = await fetch("/api/rfis");
+        const data = await res.json();
+        const tbody = document.getElementById("rfis-table-body");
+        tbody.innerHTML = "";
+
+        let totalPrevented = 0;
+        document.getElementById("stat-rfis-count").innerText = data.rfis.length;
+
+        data.rfis.forEach(r => {
+          totalPrevented += r.rework_cost_risk;
+          const tr = document.createElement("tr");
+          tr.className = "hover:bg-slate-800/40 transition";
+          tr.innerHTML = `
+            <td class="py-2.5 px-3 font-mono font-bold text-cyan-300">${r.id}</td>
+            <td class="py-2.5 px-3 font-mono text-slate-400">${r.date_issued}</td>
+            <td class="py-2.5 px-3 text-slate-300">${r.discipline}</td>
+            <td class="py-2.5 px-3 text-amber-300 font-mono">${r.level}, ${r.grid_location}</td>
+            <td class="py-2.5 px-3">
+              <div class="font-bold text-white">${r.title}</div>
+              <div class="text-slate-400 text-[11px] truncate max-w-xs">${r.approved_resolution}</div>
+            </td>
+            <td class="py-2.5 px-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${
+                r.hazard_level === 'CRITICAL_STOP_WORK' ? 'bg-red-950 text-red-300 border border-red-800' :
+                r.hazard_level === 'CAUTION_VERIFY' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
+                'bg-emerald-950 text-emerald-300 border border-emerald-800'
+              }">${r.hazard_level}</span>
+            </td>
+            <td class="py-2.5 px-3 text-right font-mono text-emerald-400 font-bold">$${Number(r.rework_cost_risk).toLocaleString()}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadBenchmarks() {
+      try {
+        const res = await fetch("/api/benchmarks");
+        const data = await res.json();
+        benchmarks = data.benchmarks;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function openIngestModal() {
+      document.getElementById("ingest-modal").classList.remove("hidden");
+    }
+
+    function closeIngestModal() {
+      document.getElementById("ingest-modal").classList.add("hidden");
+    }
+
+    async function submitNewRfi(e) {
+      e.preventDefault();
+      const payload = {
+        id: document.getElementById("new-id").value.trim(),
+        title: document.getElementById("new-title").value.trim(),
+        date_issued: document.getElementById("new-date").value,
+        discipline: document.getElementById("new-discipline").value,
+        level: document.getElementById("new-level").value,
+        grid_location: document.getElementById("new-grid").value.trim(),
+        issue_description: "Field revision submitted via engineer console.",
+        approved_resolution: document.getElementById("new-resolution").value.trim(),
+        hazard_level: document.getElementById("new-hazard").value,
+        critical_directives: [document.getElementById("new-resolution").value.trim()],
+        tags: ["field-rfi", "user-added"],
+        rework_cost_risk: parseFloat(document.getElementById("new-cost").value) || 0.0
+      };
+
+      try {
+        const res = await fetch("/api/rfis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeIngestModal();
+          await refreshMemories();
+          alert(`Successfully retained ${payload.id} in Hindsight memory!`);
+        }
+      } catch (err) {
+        alert("Error retaining RFI: " + err);
+      }
+    }
+  </script>
+</body>
+</html>
