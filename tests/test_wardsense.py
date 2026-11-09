@@ -126,3 +126,45 @@ def test_hindsight_retain_and_recall_learning_curve() -> None:
     s20_data = shift20_res.json()
     assert "BLOCKED" in s20_data["hindsight_agent"]["verdict"]
     assert "APPROVED" in s20_data["stateless_ai"]["verdict"]
+
+
+def test_strict_role_isolation_and_patient_lifecycle() -> None:
+    # Doctor should be redirected to /doctor if visiting /hospital
+    client.post(
+        "/api/auth/login",
+        json={"email": "doctor@apollomed-icu.org", "password": "DoctorPassword123!"},
+    )
+    redir_res = client.get("/hospital", follow_redirects=False)
+    assert redir_res.status_code == 302
+    assert redir_res.headers["location"] == "/doctor"
+
+    # Admin can admit and discharge a temporary patient
+    client.post(
+        "/api/auth/login",
+        json={"email": "admin@apollomed-icu.org", "password": "AdminPassword123!"},
+    )
+    hosp_html = client.get("/hospital").text
+    assert "Heart Rate" not in hosp_html
+    assert "Blood Pressure" not in hosp_html
+
+    admit_res = client.post(
+        "/api/patients",
+        json={
+            "name": "Temp Test Patient",
+            "age": 48,
+            "gender": "M",
+            "bed_number": "Bed 29 • Cardiac ICU",
+            "admission_diagnosis": "Post-PCI Observation",
+            "attending_md": "Dr. Arindam Sen, MD",
+            "primary_nurse": "Sister Priya Nair, RN",
+            "current_shift": 1,
+            "known_risk_note": "Avoid NSAIDs",
+        },
+    )
+    assert admit_res.status_code == 200
+    new_pid = admit_res.json()["patient"]["patient_id"]
+
+    del_res = client.delete(f"/api/patients/{new_pid}")
+    assert del_res.status_code == 200
+    assert del_res.json()["success"] is True
+

@@ -12,8 +12,11 @@ from src.config import settings
 from src.database import (
     create_medicine_order,
     create_new_patient,
+    delete_patient,
     get_all_patients,
     get_connection,
+    get_doctor_roster,
+    get_nurse_roster,
     get_patient_by_id,
     get_patient_memories,
     get_recent_telemetry,
@@ -64,6 +67,7 @@ class RetainObservationRequest(BaseModel):
     category: str = "Adverse Drug Reaction"
     severity: str = "CRITICAL"
     content: str
+    author_name: str | None = None
     tags: list[str] | None = None
 
 
@@ -140,6 +144,8 @@ def build_common_context(request: Request, user: dict[str, Any], active_page: st
         "user": user,
         "active_page": active_page,
         "patients": patients,
+        "doctor_roster": get_doctor_roster(),
+        "nurse_roster": get_nurse_roster(),
         "memories": memories,
         "tasks": tasks,
         "telemetry": telemetry,
@@ -200,6 +206,10 @@ async def hospital_portal(request: Request) -> Response:
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
+    if user.get("role") == "doctor":
+        return RedirectResponse(url="/doctor", status_code=302)
+    if user.get("role") == "nurse":
+        return RedirectResponse(url="/nurse", status_code=302)
     ctx = build_common_context(request, user, active_page="hospital")
     return HTMLResponse(render_hospital_page(ctx))
 
@@ -208,36 +218,26 @@ async def hospital_portal(request: Request) -> Response:
 async def doctor_portal(
     request: Request,
     patient_id: str | None = None,
-    doctor: str | None = None,
 ) -> Response:
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
+    if user.get("role") == "admin":
+        return RedirectResponse(url="/hospital", status_code=302)
+    if user.get("role") == "nurse":
+        return RedirectResponse(url="/nurse", status_code=302)
     ctx = build_common_context(request, user, active_page="doctor")
     patients = ctx["patients"]
 
-    if doctor:
-        selected_doctor = doctor.strip()
-        assigned_to_doc = [p for p in patients if p["attending_md"] == selected_doctor]
-        if patient_id:
-            selected_patient = next(
-                (p for p in assigned_to_doc if p["patient_id"] == patient_id),
-                assigned_to_doc[0] if assigned_to_doc else None,
-            )
-        else:
-            selected_patient = assigned_to_doc[0] if assigned_to_doc else None
-    else:
-        selected_patient = get_patient_by_id(patient_id or "ICU-BED-04") or patients[0]
-        selected_doctor = selected_patient["attending_md"]
+    active_patient = get_patient_by_id(patient_id or "ICU-BED-04") or (patients[0] if patients else None)
+    if not active_patient:
+        raise HTTPException(status_code=404, detail="No patients admitted in ICU")
 
-    active_patient = selected_patient or patients[0]
     ipass_brief = wardsense_agent.generate_ipass_handoff(active_patient["patient_id"])
     initial_comparison = wardsense_agent.verify_clinical_order(
         patient_id=active_patient["patient_id"],
         proposed_order=active_patient["stateless_trap_order"],
     )
-    ctx["selected_doctor"] = selected_doctor
-    ctx["doctor_has_patients"] = selected_patient is not None
     ctx["selected_patient"] = active_patient
     ctx["ipass_brief"] = ipass_brief
     ctx["initial_comparison"] = initial_comparison
@@ -250,32 +250,23 @@ async def doctor_portal(
 async def nurse_portal(
     request: Request,
     patient_id: str | None = None,
-    nurse: str | None = None,
 ) -> Response:
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
+    if user.get("role") == "admin":
+        return RedirectResponse(url="/hospital", status_code=302)
+    if user.get("role") == "doctor":
+        return RedirectResponse(url="/doctor", status_code=302)
     ctx = build_common_context(request, user, active_page="nurse")
     patients = ctx["patients"]
 
-    if nurse:
-        selected_nurse = nurse.strip()
-        assigned_to_nurse = [p for p in patients if p["primary_nurse"] == selected_nurse]
-        if patient_id:
-            selected_patient = next(
-                (p for p in assigned_to_nurse if p["patient_id"] == patient_id),
-                assigned_to_nurse[0] if assigned_to_nurse else None,
-            )
-        else:
-            selected_patient = assigned_to_nurse[0] if assigned_to_nurse else None
-    else:
-        selected_patient = get_patient_by_id(patient_id or "ICU-BED-04") or patients[0]
-        selected_nurse = selected_patient["primary_nurse"]
+    active_patient = get_patient_by_id(patient_id or "ICU-BED-04") or (patients[0] if patients else None)
+    if not active_patient:
+        raise HTTPException(status_code=404, detail="No patients admitted in ICU")
 
-    ctx["selected_nurse"] = selected_nurse
-    ctx["selected_patient"] = selected_patient or patients[0]
-    ctx["nurse_has_patients"] = selected_patient is not None
-    active_pid = ctx["selected_patient"]["patient_id"]
+    ctx["selected_patient"] = active_patient
+    active_pid = active_patient["patient_id"]
     ctx["patient_memories"] = get_patient_memories(patient_id=active_pid)
     ctx["patient_tasks"] = get_shift_tasks(patient_id=active_pid)
     return HTMLResponse(render_nurse_page(ctx))
@@ -484,6 +475,14 @@ async def api_create_patient(req: CreatePatientRequest) -> dict[str, Any]:
     return {"success": True, "patient": new_patient}
 
 
+@app.delete("/api/patients/{patient_id}")
+async def api_delete_patient(patient_id: str) -> dict[str, Any]:
+    deleted = delete_patient(patient_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return {"success": True, "patient_id": patient_id}
+
+
 @app.get("/api/ipass/{patient_id}")
 async def api_get_ipass(patient_id: str, shift: int | None = None) -> dict[str, Any]:
     try:
@@ -507,8 +506,19 @@ async def api_verify_order(req: VerifyOrderRequest) -> dict[str, Any]:
 @app.post("/api/memories/retain")
 async def api_retain_memory(req: RetainObservationRequest, request: Request) -> dict[str, Any]:
     user = get_current_user(request)
-    author_name = user["full_name"] if user else "Sister Priya Nair, RN"
-    author_role = user["role"] if user else "nurse"
+    patient = get_patient_by_id(req.patient_id)
+    if req.author_name and req.author_name.strip():
+        author_name = req.author_name.strip()
+        author_role = "nurse"
+    elif user and user.get("role") == "nurse":
+        author_name = user["full_name"]
+        author_role = "nurse"
+    elif patient:
+        author_name = patient["primary_nurse"]
+        author_role = "nurse"
+    else:
+        author_name = "Sister Priya Nair, RN"
+        author_role = "nurse"
 
     retained = memory_engine.retain_shift_observation(
         patient_id=req.patient_id,

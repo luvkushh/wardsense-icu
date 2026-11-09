@@ -144,25 +144,6 @@ class WardSenseMemoryEngine:
                 created_at,
             ),
         )
-        # Also auto-create a follow-up shift task if CRITICAL or WARNING
-        if severity in ("CRITICAL", "WARNING"):
-            task_id = f"TSK-{uuid.uuid4().hex[:4].upper()}"
-            conn.execute(
-                """
-                INSERT INTO shift_tasks (
-                    task_id, patient_id, shift_origin, title, priority, status, clinical_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    patient_id,
-                    f"Shift #{shift_number} ({author_name})",
-                    f"[{category}] Verify follow-up: {content[:85]}...",
-                    "CRITICAL" if severity == "CRITICAL" else "HIGH",
-                    "PENDING",
-                    f"Retained in Hindsight Bank ({memory_id}) during Shift #{shift_number}.",
-                ),
-            )
         conn.commit()
         conn.close()
 
@@ -238,20 +219,24 @@ class WardSenseMemoryEngine:
 
         memories = get_patient_memories(patient_id=patient_id, max_shift=max_shift)
 
-        # Rank memories by relevance to query terms + severity
+        # Rank memories by relevance to query terms + Hindsight Cloud semantic hits + severity
         query_words = [
             w.lower()
             for w in query.replace("(", " ").replace(")", " ").split()
             if len(w) >= 3
         ]
+        cloud_blob = " ".join(cloud_results).lower()
         scored_memories = []
         for m in memories:
             haystack = (
                 f"{m['content']} {m['category']} {' '.join(m['tags'])}"
             ).lower()
             keyword_hits = sum(1 for w in query_words if w in haystack)
+            cloud_semantic_boost = (
+                4 if cloud_blob and m["content"][:40].lower() in cloud_blob else 0
+            )
             severity_boost = 3 if m["severity"] == "CRITICAL" else (2 if m["severity"] == "WARNING" else 1)
-            score = keyword_hits * 2 + severity_boost
+            score = keyword_hits * 2 + cloud_semantic_boost + severity_boost
             m_copy = dict(m)
             m_copy["relevance_score"] = score
             scored_memories.append(m_copy)
@@ -291,8 +276,46 @@ class WardSenseMemoryEngine:
             "cloud_results": cloud_results,
         }
 
+    def reflect_patient_continuity(
+        self, patient_id: str, query: str
+    ) -> dict[str, Any]:
+        """Execute `client.reflect()` on Hindsight Cloud to synthesize longitudinal insights."""
+        t0 = time.perf_counter()
+        client = self._get_cloud_client()
+        reflection_text = ""
+        mode = "LOCAL_MIRROR"
+
+        if client is not None and hasattr(client, "reflect"):
+            try:
+                resp = _CLOUD_EXECUTOR.submit(
+                    client.reflect,
+                    bank_id=settings.hindsight_bank_id,
+                    query=f"Patient {patient_id}: {query}",
+                ).result(timeout=10.0)
+                reflection_text = getattr(resp, "text", str(resp))[:400]
+                mode = "HINDSIGHT_CLOUD"
+            except Exception:
+                mode = "HINDSIGHT_CLOUD_FALLBACK"
+
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        record_telemetry(
+            operation="client.reflect",
+            bank_id=settings.hindsight_bank_id,
+            patient_id=patient_id,
+            mode=mode,
+            latency_ms=latency_ms,
+            summary=f"Reflected longitudinal shift patterns for {patient_id}",
+            payload={"sdk_call": "client.reflect()", "patient_id": patient_id, "query": query},
+        )
+        return {
+            "patient_id": patient_id,
+            "mode": mode,
+            "reflection": reflection_text,
+            "latency_ms": round(latency_ms, 2),
+        }
+
     def sync_all_to_hindsight_cloud(self) -> dict[str, Any]:
-        """Push all unsynced local ICU shift memories directly to Hindsight Cloud."""
+        """Push all unsynced local ICU shift memories in parallel to Hindsight Cloud."""
         client = self._get_cloud_client()
         if client is None:
             return {
@@ -301,43 +324,66 @@ class WardSenseMemoryEngine:
                 "message": "Hindsight Cloud API Key not configured yet. Add HINDSIGHT_API_KEY (Promo code: MEMHACK99 at ui.hindsight.vectorize.io).",
             }
 
-        memories = get_patient_memories()
-        synced_now = 0
-        errors: list[str] = []
-        conn = get_connection()
+        unsynced = [m for m in get_patient_memories() if not m.get("cloud_synced")]
+        if not unsynced:
+            return {
+                "success": True,
+                "synced": 0,
+                "bank_id": settings.hindsight_bank_id,
+                "errors": [],
+                "message": f"All ICU shift memories are already synced with Hindsight Cloud ({settings.hindsight_bank_id}).",
+            }
 
-        for m in memories:
-            if m.get("cloud_synced"):
-                continue
+        def _push_one(m: dict[str, Any]) -> tuple[str, str, float, str | None]:
             t0 = time.perf_counter()
             structured = (
                 f"[{m['patient_id']} | {m['shift_label']} | {m['category']} | "
                 f"Severity: {m['severity']} | By: {m['author_name']}] {m['content']}"
             )
             try:
-                _CLOUD_EXECUTOR.submit(
-                    client.retain,
+                client.retain(
                     bank_id=settings.hindsight_bank_id,
                     content=structured,
                     context=f"ICU Clinical Handoff Memory • {m['patient_id']}",
-                ).result(timeout=12.0)
+                )
+                return (
+                    m["memory_id"],
+                    m["patient_id"],
+                    (time.perf_counter() - t0) * 1000.0,
+                    None,
+                )
+            except Exception as exc:
+                return (
+                    m["memory_id"],
+                    m["patient_id"],
+                    (time.perf_counter() - t0) * 1000.0,
+                    str(exc)[:100],
+                )
+
+        futures = [_CLOUD_EXECUTOR.submit(_push_one, m) for m in unsynced]
+        synced_now = 0
+        errors: list[str] = []
+        conn = get_connection()
+
+        for fut in futures:
+            mem_id, pid, latency_ms, err = fut.result(timeout=15.0)
+            if err is None:
                 conn.execute(
                     "UPDATE memories SET cloud_synced = 1 WHERE memory_id = ?",
-                    (m["memory_id"],),
+                    (mem_id,),
                 )
                 synced_now += 1
-                latency_ms = (time.perf_counter() - t0) * 1000.0
                 record_telemetry(
                     operation="client.retain (cloud-sync)",
                     bank_id=settings.hindsight_bank_id,
-                    patient_id=m["patient_id"],
+                    patient_id=pid,
                     mode="HINDSIGHT_CLOUD",
                     latency_ms=latency_ms,
-                    summary=f"Cloud-synced memory {m['memory_id']} to {settings.hindsight_bank_id}",
-                    payload={"memory_id": m["memory_id"], "bank_id": settings.hindsight_bank_id},
+                    summary=f"Cloud-synced memory {mem_id} to {settings.hindsight_bank_id}",
+                    payload={"memory_id": mem_id, "bank_id": settings.hindsight_bank_id},
                 )
-            except Exception as exc:
-                errors.append(f"{m['memory_id']}: {str(exc)[:100]}")
+            else:
+                errors.append(f"{mem_id}: {err}")
 
         conn.commit()
         conn.close()

@@ -8,8 +8,10 @@ from src.config import DB_PATH
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(DB_PATH), timeout=15.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
 
@@ -58,7 +60,7 @@ SEED_PATIENTS = [
         "admission_diagnosis": "Post-CABG (x3 Vessel) Day 4 • Acute Decompensated Volume Overload",
         "illness_severity": "CRITICAL / WATCHER",
         "status_badge": "CRITICAL CONTRAINDICATION TRAP",
-        "attending_md": "Dr. Arindam Sen",
+        "attending_md": "Dr. Arindam Sen, MD",
         "primary_nurse": "Sister Priya Nair, RN",
         "current_shift": 20,
         "vitals": {
@@ -96,7 +98,7 @@ SEED_PATIENTS = [
         "admission_diagnosis": "Urosepsis with Refractory Septic Shock • Day 3",
         "illness_severity": "CRITICAL",
         "status_badge": "HIDDEN DRUG REACTION",
-        "attending_md": "Dr. Arindam Sen",
+        "attending_md": "Dr. Kavita Verma, MD",
         "primary_nurse": "Nurse R. Thomas, RN",
         "current_shift": 12,
         "vitals": {
@@ -134,7 +136,7 @@ SEED_PATIENTS = [
         "admission_diagnosis": "Acute Right MCA Ischemic Stroke (Post-Thrombectomy Day 3)",
         "illness_severity": "WATCHER",
         "status_badge": "PERFUSION WINDOW CONSTRAINT",
-        "attending_md": "Dr. Arindam Sen",
+        "attending_md": "Dr. S. Kapoor, MD (Neuro)",
         "primary_nurse": "Nurse Anjali Menon, RN",
         "current_shift": 15,
         "vitals": {
@@ -172,7 +174,7 @@ SEED_PATIENTS = [
         "admission_diagnosis": "Post-VATS Left Lower Lobectomy Day 2 • Thoracic Epidural in Situ",
         "illness_severity": "STABLE / WATCHER",
         "status_badge": "EPIDURAL ANTICOAGULATION HOLD",
-        "attending_md": "Dr. Arindam Sen",
+        "attending_md": "Dr. K. Kulkarni, MD (Cardio)",
         "primary_nurse": "Nurse Deepak Joshi, RN",
         "current_shift": 8,
         "vitals": {
@@ -554,8 +556,207 @@ def init_db() -> None:
                 ),
             )
 
+    # Create performance indexes for concurrent portal queries
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memories_patient_shift ON memories(patient_id, shift_number DESC);"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_patient_status ON shift_tasks(patient_id, status);"
+    )
+
+    # Clean up test garbage patients (e.g. 'kuch', 'raj') and normalize doctor names
+    cur.execute(
+        "DELETE FROM shift_tasks WHERE patient_id IN (SELECT patient_id FROM patients WHERE LOWER(TRIM(name)) IN ('kuch', 'raj', 'temp test patient'));"
+    )
+    cur.execute(
+        "DELETE FROM memories WHERE patient_id IN (SELECT patient_id FROM patients WHERE LOWER(TRIM(name)) IN ('kuch', 'raj', 'temp test patient'));"
+    )
+    cur.execute("DELETE FROM patients WHERE LOWER(TRIM(name)) IN ('kuch', 'raj', 'temp test patient') OR patient_id = 'ICU-BED-18';")
+    cur.execute(
+        "UPDATE patients SET attending_md = 'Dr. Arindam Sen, MD' WHERE attending_md = 'Dr. Arindam Sen';"
+    )
+
+    # Ensure all core 4 ICU patients exist
+    for p in SEED_PATIENTS:
+        cur.execute("SELECT patient_id FROM patients WHERE patient_id = ?", (p["patient_id"],))
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO patients (
+                    patient_id, bed_number, name, age, gender, mrn,
+                    admission_diagnosis, illness_severity, status_badge,
+                    attending_md, primary_nurse, current_shift,
+                    vitals_json, stateless_trap_order, stateless_ai_json, hindsight_safe_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    p["patient_id"],
+                    p["bed_number"],
+                    p["name"],
+                    p["age"],
+                    p["gender"],
+                    p["mrn"],
+                    p["admission_diagnosis"],
+                    p["illness_severity"],
+                    p["status_badge"],
+                    p["attending_md"],
+                    p["primary_nurse"],
+                    p["current_shift"],
+                    json.dumps(p["vitals"]),
+                    p["stateless_trap_order"],
+                    json.dumps(p["stateless_ai_response"]),
+                    json.dumps(p["hindsight_safe_protocol"]),
+                ),
+            )
+
+    # Ensure core seed memories exist
+    for m in SEED_MEMORIES:
+        cur.execute("SELECT memory_id FROM memories WHERE memory_id = ?", (m["memory_id"],))
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO memories (
+                    memory_id, patient_id, shift_number, shift_label,
+                    author_name, author_role, category, severity,
+                    content, tags_json, cloud_synced, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    m["memory_id"],
+                    m["patient_id"],
+                    m["shift_number"],
+                    m["shift_label"],
+                    m["author_name"],
+                    m["author_role"],
+                    m["category"],
+                    m["severity"],
+                    m["content"],
+                    json.dumps(m["tags"]),
+                    0,
+                    m["created_at"],
+                ),
+            )
+
+    # Ensure core seed tasks exist
+    for t in SEED_TASKS:
+        cur.execute("SELECT task_id FROM shift_tasks WHERE task_id = ?", (t["task_id"],))
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO shift_tasks (
+                    task_id, patient_id, shift_origin, title, priority, status, clinical_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    t["task_id"],
+                    t["patient_id"],
+                    t["shift_origin"],
+                    t["title"],
+                    t["priority"],
+                    t["status"],
+                    t["clinical_reason"],
+                ),
+            )
+
+    # Remove bogus auto-created follow-up tasks from shift_tasks so only real prescriptions/orders remain
+    cur.execute("DELETE FROM shift_tasks WHERE title LIKE '[%] Verify follow-up:%';")
+
+    # Deduplicate identical shift_tasks per patient (keep the earliest row)
+    cur.execute(
+        """
+        DELETE FROM shift_tasks
+        WHERE rowid NOT IN (
+            SELECT MIN(rowid) FROM shift_tasks GROUP BY patient_id, title
+        );
+        """
+    )
+
+    # Fix any nurse history notes accidentally attributed to Admin Dr. Vikramaditya Rao
+    cur.execute(
+        """
+        UPDATE memories
+        SET author_name = 'Sister Priya Nair, RN', author_role = 'nurse'
+        WHERE author_name LIKE '%Vikramaditya Rao%'
+          AND category IN ('Medicine Given & Response', 'Adverse Drug Reaction', 'Electrolyte & Arrhythmia Alert', 'Shift Handoff Directive');
+        """
+    )
+
     conn.commit()
     conn.close()
+
+
+DEFAULT_DOCTOR_ROSTER = [
+    "Dr. Arindam Sen, MD",
+    "Dr. Kavita Verma, MD",
+    "Dr. S. Kapoor, MD (Neuro)",
+    "Dr. K. Kulkarni, MD (Cardio)",
+]
+
+DEFAULT_NURSE_ROSTER = [
+    "Sister Priya Nair, RN",
+    "Nurse R. Thomas, RN",
+    "Nurse Anjali Menon, RN",
+    "Nurse Deepak Joshi, RN",
+]
+
+
+def get_doctor_roster() -> list[str]:
+    """Return all standard + registered Doctors from the users & patients tables."""
+    roster = list(DEFAULT_DOCTOR_ROSTER)
+    conn = get_connection()
+    user_rows = conn.execute(
+        "SELECT full_name FROM users WHERE role = 'doctor' ORDER BY id ASC"
+    ).fetchall()
+    pt_rows = conn.execute("SELECT DISTINCT attending_md FROM patients").fetchall()
+    conn.close()
+
+    for r in user_rows:
+        name = r["full_name"].split("(")[0].strip()
+        if name and name not in roster:
+            roster.append(name)
+    for r in pt_rows:
+        name = r["attending_md"].strip()
+        if name and name not in roster:
+            roster.append(name)
+    return roster
+
+
+def get_nurse_roster() -> list[str]:
+    """Return all standard + registered Nurses from the users & patients tables."""
+    roster = list(DEFAULT_NURSE_ROSTER)
+    conn = get_connection()
+    user_rows = conn.execute(
+        "SELECT full_name FROM users WHERE role = 'nurse' ORDER BY id ASC"
+    ).fetchall()
+    pt_rows = conn.execute("SELECT DISTINCT primary_nurse FROM patients").fetchall()
+    conn.close()
+
+    for r in user_rows:
+        name = r["full_name"].replace(", CCRN", "").strip()
+        if name and name not in roster:
+            roster.append(name)
+    for r in pt_rows:
+        name = r["primary_nurse"].strip()
+        if name and name not in roster:
+            roster.append(name)
+    return roster
+
+
+def delete_patient(patient_id: str) -> bool:
+    """Discharge/remove a patient and associated tasks/memories from the ward."""
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT patient_id FROM patients WHERE patient_id = ?", (patient_id,)
+    ).fetchone()
+    if not existing:
+        conn.close()
+        return False
+    conn.execute("DELETE FROM shift_tasks WHERE patient_id = ?", (patient_id,))
+    conn.execute("DELETE FROM memories WHERE patient_id = ?", (patient_id,))
+    conn.execute("DELETE FROM patients WHERE patient_id = ?", (patient_id,))
+    conn.commit()
+    conn.close()
+    return True
 
 
 def get_all_patients() -> list[dict[str, Any]]:
@@ -733,9 +934,26 @@ def create_medicine_order(
     """Doctor action: Prescribe medicine and assign it to the Nurse's administration queue."""
     import uuid
 
-    task_id = f"MED-{uuid.uuid4().hex[:5].upper()}"
+    clean_title = title.strip()
     shift_origin = f"Shift #{shift_number} • Prescribed by {doctor_name} for {nurse_name}"
     conn = get_connection()
+    existing = conn.execute(
+        "SELECT * FROM shift_tasks WHERE patient_id = ? AND LOWER(title) = LOWER(?)",
+        (patient_id, clean_title),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE shift_tasks SET status = 'PENDING', shift_origin = ?, clinical_reason = ?, priority = ? WHERE task_id = ?",
+            (shift_origin, clinical_reason.strip(), priority, existing["task_id"]),
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT * FROM shift_tasks WHERE task_id = ?", (existing["task_id"],)
+        ).fetchone()
+        conn.close()
+        return dict(updated)
+
+    task_id = f"MED-{uuid.uuid4().hex[:5].upper()}"
     conn.execute(
         """
         INSERT INTO shift_tasks (
@@ -746,7 +964,7 @@ def create_medicine_order(
             task_id,
             patient_id,
             shift_origin,
-            title.strip(),
+            clean_title,
             priority,
             "PENDING",
             clinical_reason.strip(),
@@ -758,7 +976,7 @@ def create_medicine_order(
         "task_id": task_id,
         "patient_id": patient_id,
         "shift_origin": shift_origin,
-        "title": title.strip(),
+        "title": clean_title,
         "priority": priority,
         "status": "PENDING",
         "clinical_reason": clinical_reason.strip(),
