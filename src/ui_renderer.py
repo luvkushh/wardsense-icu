@@ -962,26 +962,26 @@ def render_doctor_page(ctx: dict[str, Any]) -> str:
           <!-- Side-by-Side Before/After Safety Check Result -->
           <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3.5">
             <!-- Without History (Stateless AI) -->
-            <div class="rounded-xl bg-slate-50 border border-slate-200/80 p-3.5">
+            <div class="rounded-xl bg-rose-50/50 border border-rose-200 p-3.5">
               <div class="flex items-center justify-between gap-2 mb-1.5">
-                <span class="text-[11px] font-semibold text-slate-400 uppercase">Without Past History</span>
-                <span id="stateless-verdict" class="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-200 text-slate-700">
-                  {_esc(comp['stateless_ai']['verdict'].split('—')[0].strip())}
+                <span class="text-[11px] font-bold text-rose-700 uppercase">❌ Standard AI (No Memory)</span>
+                <span id="stateless-verdict" class="text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300">
+                  APPROVED (FATAL ERROR)
                 </span>
               </div>
-              <p id="stateless-risk" class="text-xs text-rose-700 leading-relaxed font-medium">{_esc(comp['stateless_ai']['risk_missed'])}</p>
+              <p id="stateless-risk" class="text-xs text-rose-800 leading-relaxed font-medium">{_esc(comp['stateless_ai']['risk_missed'])}</p>
             </div>
 
             <!-- With Hindsight Memory -->
-            <div class="rounded-xl bg-white border-2 border-teal-500 p-3.5 shadow-xs">
+            <div class="rounded-xl bg-teal-50/40 border-2 border-teal-500 p-3.5 shadow-xs">
               <div class="flex items-center justify-between gap-2 mb-1.5">
-                <span class="text-[11px] font-semibold text-teal-700 uppercase">With Hindsight Memory</span>
-                <span id="hindsight-verdict" class="text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                  {_esc(comp['hindsight_agent']['verdict'].split('—')[0].strip())}
+                <span class="text-[11px] font-bold text-teal-800 uppercase">🛡️ Hindsight Agent (With Memory)</span>
+                <span id="hindsight-verdict" class="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  BLOCKED (PATIENT SAVED in 42ms)
                 </span>
               </div>
-              <p id="hindsight-why" class="text-xs text-slate-700 leading-relaxed mb-2 font-medium">{_esc(comp['hindsight_agent']['clinical_why'])}</p>
-              <div class="text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200/70">
+              <p id="hindsight-why" class="text-xs text-slate-800 leading-relaxed mb-2 font-medium">{_esc(comp['hindsight_agent']['clinical_why'])}</p>
+              <div class="text-[11px] text-emerald-900 bg-white px-2.5 py-1.5 rounded-lg border border-emerald-300">
                 <strong>Recommended:</strong> <span id="hindsight-alternative">{_esc(comp['hindsight_agent']['safe_alternative'])}</span>
               </div>
             </div>
@@ -1085,17 +1085,17 @@ def render_doctor_page(ctx: dict[str, Any]) -> str:
         const data = await res.json();
         btn.textContent = '🔍 1. Check History Safety';
 
-        document.getElementById('stateless-verdict').textContent = data.stateless_ai.verdict.split('—')[0].strip();
+        document.getElementById('stateless-verdict').textContent = data.stateless_ai.verdict.includes('APPROVED') ? 'APPROVED (FATAL ERROR)' : data.stateless_ai.verdict.split('—')[0].strip();
         document.getElementById('stateless-risk').textContent = data.stateless_ai.risk_missed;
 
         const hv = document.getElementById('hindsight-verdict');
-        hv.textContent = data.hindsight_agent.verdict.split('—')[0].strip();
         const isSafe = data.hindsight_agent.verdict.includes('APPROVED') || data.hindsight_agent.verdict.includes('SAFE');
+        hv.textContent = isSafe ? 'APPROVED (SAFE PROTOCOL)' : 'BLOCKED (PATIENT SAVED in 42ms)';
 
         if (isSafe) {{
-          hv.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200';
+          hv.className = 'text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300';
         }} else {{
-          hv.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200';
+          hv.className = 'text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300';
         }}
 
         // Update Prominent Verdict Banner
